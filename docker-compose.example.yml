@@ -1,7 +1,6 @@
 services:
   teletextarr:
-    image: teletextarr:latest
-    build: .
+    image: ghcr.io/lgulliver/teletextarr:latest
     container_name: teletextarr
     restart: unless-stopped
     ports:

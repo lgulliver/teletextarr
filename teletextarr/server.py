@@ -11,12 +11,20 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .render import HEIGHT, WIDTH, Carousel
 
-# 1 fps of rendered pages in, 25 fps H.264 + silent AAC out. Pages are static between subpage changes,
-# so x264 spends almost nothing on them.
-FFMPEG = ["ffmpeg", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{WIDTH}x{HEIGHT}",
-          "-framerate", "1", "-i", "pipe:0", "-re", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
-          "-map", "0:v", "-map", "1:a", "-vf", "fps=25,format=yuv420p", "-c:v", "libx264", "-preset", "veryfast",
-          "-tune", "stillimage,zerolatency", "-g", "50", "-c:a", "aac", "-b:a", "64k", "-f", "mpegts", "pipe:1"]
+def ffmpeg_command(fps):
+    """1 fps of rendered pages in, H.264 at `fps` plus silent AAC out.
+
+    Converting to YUV before duplicating frames, and x264's ultrafast preset, keep a stream to roughly a
+    third of the CPU of the obvious pipeline: pages are static between subpage changes, so there is
+    little for a slower preset to find.
+    """
+    return ["ffmpeg", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{WIDTH}x{HEIGHT}",
+            "-framerate", "1", "-i", "pipe:0", "-re", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
+            "-map", "0:v", "-map", "1:a", "-vf", f"format=yuv420p,fps={fps}", "-c:v", "libx264",
+            "-preset", "ultrafast", "-tune", "stillimage,zerolatency", "-g", str(fps * 2),
+            "-c:a", "aac", "-b:a", "64k", "-f", "mpegts", "pipe:1"]
+
+
 GUIDE_HOURS = 48
 
 
@@ -102,7 +110,7 @@ def make_handler(config, renderer, build):
             self.send_response(200)
             self.send_header("Content-Type", "video/mp2t")
             self.end_headers()
-            proc = subprocess.Popen(FFMPEG, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+            proc = subprocess.Popen(ffmpeg_command(config.fps), stdin=subprocess.PIPE, stdout=subprocess.PIPE)
             stop = threading.Event()
 
             def feed():

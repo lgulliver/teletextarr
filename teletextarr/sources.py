@@ -1,4 +1,6 @@
 """Fetch and cache the data each page shows: RSS stories, weather, TV listings, media server status."""
+import collections
+import contextlib
 import datetime as dt
 import html
 import json
@@ -81,6 +83,36 @@ class Sources:
         self.config = config
         self.data = {}
         self.lock = threading.Lock()
+        self.watchers = collections.Counter()  # page number -> viewers currently relying on its data
+        self.due = {n: 0.0 for n in config.pages}
+        self.wake = threading.Event()
+
+    def needs(self, number):
+        """Pages whose data a page shows: itself, plus the page an index takes headlines from."""
+        page = self.config.pages[number]
+        extra = page.options.get("headlines_from") if page.type == "index" else None
+        return [number] + ([extra] if extra in self.config.pages else [])
+
+    def wait_for(self, number, timeout=10):
+        """Block until a page that fetches data has some (or the timeout passes)."""
+        if self.config.pages[number].type in ("index", "text"):
+            return
+        deadline = time.monotonic() + timeout
+        while self.get(number) is None and time.monotonic() < deadline:
+            time.sleep(0.2)
+
+    @contextlib.contextmanager
+    def watching(self, number):
+        """Keep a page's data fresh while someone is watching it; stale data is refreshed straight away."""
+        pages = self.needs(number)
+        with self.lock:
+            self.watchers.update(pages)
+        self.wake.set()
+        try:
+            yield
+        finally:
+            with self.lock:
+                self.watchers.subtract(pages)
 
     def get(self, number):
         with self.lock:
@@ -173,13 +205,22 @@ class Sources:
                 self.data[page.number] = value
 
     def run(self):
-        due = {n: 0.0 for n in self.config.pages}
+        """Refresh pages as they fall due. Unless refresh_when_idle is set, only watched pages refresh,
+        and the thread sleeps until someone tunes in."""
         while True:
-            for number, page in self.config.pages.items():
-                if time.time() >= due[number]:
+            now = time.time()
+            with self.lock:
+                watched = {n for n, count in self.watchers.items() if count > 0}
+            active = [n for n in self.config.pages if self.config.refresh_when_idle or n in watched]
+            for number in active:
+                if now >= self.due[number]:
+                    page = self.config.pages[number]
                     self.refresh(page)
-                    due[number] = time.time() + page.refresh_minutes * 60
-            time.sleep(5)
+                    self.due[number] = time.time() + page.refresh_minutes * 60
+            pending = [self.due[n] for n in active]
+            timeout = max(1.0, min(pending) - time.time()) if pending else None
+            self.wake.wait(timeout)
+            self.wake.clear()
 
     def start(self):
         threading.Thread(target=self.run, daemon=True, name="sources").start()

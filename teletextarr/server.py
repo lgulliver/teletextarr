@@ -2,27 +2,29 @@
 import datetime as dt
 import io
 import json
+import queue
 import re
-import subprocess
-import threading
-import time
 import xml.etree.ElementTree as ET
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from .broadcast import Broadcaster
 from .render import HEIGHT, WIDTH, Carousel
 
-def ffmpeg_command(fps):
-    """1 fps of rendered pages in, H.264 at `fps` plus silent AAC out.
+VIEWER_TIMEOUT = 30  # seconds a viewer's socket may stall before we give up on it
 
-    Converting to YUV before duplicating frames, and x264's ultrafast preset, keep a stream to roughly a
-    third of the CPU of the obvious pipeline: pages are static between subpage changes, so there is
-    little for a slower preset to find.
+def ffmpeg_command(fps):
+    """1 fps of rendered pages in, H.264 at `fps` plus silent mono AAC out.
+
+    Measured on a Broadwell Xeon, a stream costs about 25% of a core at 25 fps and 13% at 10 fps.
+    Converting to YUV before frames are duplicated, and x264's ultrafast preset, make most of that
+    difference: pages are static between subpage changes, so a slower preset has little to find.
+    NVIDIA's NVENC uses less CPU but wakes the GPU, adding ~13 W, so x264 on the CPU is the frugal choice.
     """
     return ["ffmpeg", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{WIDTH}x{HEIGHT}",
-            "-framerate", "1", "-i", "pipe:0", "-re", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
+            "-framerate", "1", "-i", "pipe:0", "-re", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono",
             "-map", "0:v", "-map", "1:a", "-vf", f"format=yuv420p,fps={fps}", "-c:v", "libx264",
             "-preset", "ultrafast", "-tune", "stillimage,zerolatency", "-g", str(fps * 2),
-            "-c:a", "aac", "-b:a", "64k", "-f", "mpegts", "pipe:1"]
+            "-c:a", "aac", "-b:a", "32k", "-f", "mpegts", "pipe:1"]
 
 
 GUIDE_HOURS = 48
@@ -71,7 +73,7 @@ def xmltv(config, now=None):
     return ET.tostring(tv, encoding="utf-8", xml_declaration=True)
 
 
-def make_handler(config, renderer, build):
+def make_handler(config, renderer, build, sources, broadcaster):
     class Handler(BaseHTTPRequestHandler):
         def send(self, body, ctype):
             if isinstance(body, str):
@@ -100,8 +102,10 @@ def make_handler(config, renderer, build):
             if m and int(m.group(2)) in config.pages:
                 number = int(m.group(2))
                 if m.group(1) == "preview":
-                    buf = io.BytesIO()
-                    Carousel(config, renderer, build).frame(number).save(buf, "PNG")
+                    with sources.watching(number):
+                        sources.wait_for(number)
+                        buf = io.BytesIO()
+                        Carousel(config, renderer, build).frame(number).save(buf, "PNG")
                     return self.send(buf.getvalue(), "image/png")
                 return self.stream(number)
             self.send_error(404)
@@ -110,32 +114,18 @@ def make_handler(config, renderer, build):
             self.send_response(200)
             self.send_header("Content-Type", "video/mp2t")
             self.end_headers()
-            proc = subprocess.Popen(ffmpeg_command(config.fps), stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-            stop = threading.Event()
-
-            def feed():
-                carousel = Carousel(config, renderer, build)
+            self.connection.settimeout(VIEWER_TIMEOUT)
+            with sources.watching(number):
+                broadcast, chunks = broadcaster.join(number)
+                print(f"{self.address_string()} tuned to {number} ({broadcast.viewer_count()} watching)", flush=True)
                 try:
-                    while not stop.is_set():
-                        started = time.time()
-                        proc.stdin.write(carousel.frame(number).tobytes())
-                        proc.stdin.flush()
-                        stop.wait(max(0.0, 1 - (time.time() - started)))
-                except (BrokenPipeError, ValueError, OSError):
+                    while (chunk := chunks.get(timeout=VIEWER_TIMEOUT)) is not None:
+                        self.wfile.write(chunk)
+                except (OSError, queue.Empty):  # viewer left, stalled, or the encoder stopped
                     pass
-
-            threading.Thread(target=feed, daemon=True).start()
-            print(f"{self.address_string()} tuned to {number}", flush=True)
-            try:
-                while chunk := proc.stdout.read(65536):
-                    self.wfile.write(chunk)
-            except (BrokenPipeError, ConnectionResetError):
-                pass
-            finally:
-                stop.set()
-                proc.kill()
-                proc.wait()
-                print(f"{self.address_string()} left {number}", flush=True)
+                finally:
+                    broadcast.unsubscribe(chunks)
+                    print(f"{self.address_string()} left {number}", flush=True)
 
         def log_message(self, fmt, *args):
             pass
@@ -143,7 +133,16 @@ def make_handler(config, renderer, build):
     return Handler
 
 
-def serve(config, renderer, build):
-    server = ThreadingHTTPServer(("", config.port), make_handler(config, renderer, build))
+def frame_source(config, renderer, build):
+    """For the broadcaster: a callable per page that renders that page's current frame as raw RGB."""
+    def frames_for(number):
+        carousel = Carousel(config, renderer, build)
+        return lambda: carousel.frame(number).tobytes()
+    return frames_for
+
+
+def serve(config, renderer, build, sources):
+    broadcaster = Broadcaster(ffmpeg_command(config.fps), frame_source(config, renderer, build), config.linger_seconds)
+    server = ThreadingHTTPServer(("", config.port), make_handler(config, renderer, build, sources, broadcaster))
     print(f"Teletextarr serving {len(config.pages)} pages on port {config.port} ({config.base_url})", flush=True)
     server.serve_forever()

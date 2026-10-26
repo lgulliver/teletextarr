@@ -21,7 +21,7 @@ It works in every Plex and Jellyfin app, including TV apps and consoles, because
 - **Plex and Jellyfin support**: emulates an HDHomeRun tuner and also serves an M3U playlist and XMLTV guide.
 - **Weather maps**: a mosaic-block map of any country with live temperatures, like the old weather pages.
 - **Authentic look**: the 40×25 grid, the eight teletext colours, double-height titles, a ticking clock, the coloured shortcut (Fastext) row, and the [Bedstead](https://bjh21.me.uk/bedstead/) font.
-- **Light on power**: nothing is encoded until someone tunes in, and the encoder stops when they leave. A page is a still image most of the time, so a stream is around 350 kbps and about a quarter of one older CPU core.
+- **Light on power**: nothing is encoded or fetched while nobody is watching. Everyone watching a page shares one encoder, which stops shortly after the last viewer leaves. A stream is around 350 kbps and costs about a quarter of an older CPU core at 25 fps, or an eighth at 10 fps.
 
 ## Quick start
 
@@ -68,6 +68,8 @@ Anything written as `${NAME}` is read from the environment, so secrets stay out 
 | `device_id` | `54545852` | 8 hex characters. Plex identifies tuners by this ID, so don't change it after setup. |
 | `tuner_count` | `4` | How many people can watch at once. |
 | `fps` | `25` | Output frame rate. Pages are mostly static, so `10` roughly halves the CPU per viewer if your clients accept it. |
+| `linger_seconds` | `10` | How long a page's encoder keeps running after its last viewer leaves. |
+| `refresh_when_idle` | `false` | Fetch data for every page all the time, instead of only for pages being watched. |
 | `user_agent` | `Teletextarr/<version>` | Sent when fetching feeds. |
 
 ### `display`

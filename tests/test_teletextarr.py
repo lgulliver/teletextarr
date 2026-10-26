@@ -257,3 +257,82 @@ def test_encoder_converts_before_duplicating_frames(config):
     assert cmd[cmd.index("-vf") + 1] == "format=yuv420p,fps=25"
     assert cmd[cmd.index("-g") + 1] == "50"
     assert ffmpeg_command(10)[cmd.index("-vf") + 1] == "format=yuv420p,fps=10"
+
+
+# --- shared encoders and lazy refresh ------------------------------------------------------------
+
+import sys
+import threading
+import time as _time
+
+from teletextarr.broadcast import Broadcaster
+from teletextarr.sources import Sources
+
+# Stands in for ffmpeg: copies stdin to stdout in TS-packet-sized pieces.
+ECHO = [sys.executable, "-c", "import sys\nwhile d := sys.stdin.buffer.read(188):\n    sys.stdout.buffer.write(d); sys.stdout.buffer.flush()"]
+
+
+def drain(q, n, timeout=5):
+    got = []
+    deadline = _time.monotonic() + timeout
+    while len(got) < n and _time.monotonic() < deadline:
+        try:
+            item = q.get(timeout=0.5)
+        except Exception:
+            continue
+        got.append(item)
+    return got
+
+
+def test_viewers_of_a_page_share_one_encoder():
+    started = []
+
+    def frames_for(number):
+        started.append(number)
+        return lambda: b"\x47" * (188 * 64)
+
+    b = Broadcaster(ECHO, frames_for, linger=0.5)
+    first, q1 = b.join(101)
+    second, q2 = b.join(101)
+    assert first is second and started == [101]
+    assert len(drain(q1, 1)) == 1 and len(drain(q2, 1)) == 1
+    assert b.active() == {101: 2}
+    first.unsubscribe(q1)
+    first.unsubscribe(q2)
+    deadline = _time.monotonic() + 5
+    while b.active() and _time.monotonic() < deadline:
+        _time.sleep(0.1)
+    assert b.active() == {} and first.stopped.is_set()
+    assert first.proc.poll() is not None  # the encoder process is gone
+
+
+def test_a_viewer_returning_within_the_linger_reuses_the_encoder():
+    b = Broadcaster(ECHO, lambda n: (lambda: b"\x47" * 188 * 64), linger=5)
+    first, q = b.join(300)
+    first.unsubscribe(q)
+    again, q2 = b.join(300)
+    assert again is first and not first.stopped.is_set()
+    again.unsubscribe(q2)
+    first.stop()
+
+
+def test_idle_pages_are_not_refreshed(config):
+    refreshed = []
+    sources = Sources(config)
+    sources.refresh = lambda page: refreshed.append(page.number)
+    threading.Thread(target=sources.run, daemon=True).start()
+    _time.sleep(0.3)
+    assert refreshed == []  # nobody watching: nothing fetched
+    with sources.watching(100):
+        _time.sleep(0.3)
+    assert sorted(refreshed) == [100, 101]  # the index and the page it takes headlines from
+
+
+def test_refresh_when_idle_keeps_everything_fresh(config):
+    config.refresh_when_idle = True
+    refreshed = []
+    sources = Sources(config)
+    sources.refresh = lambda page: refreshed.append(page.number)
+    threading.Thread(target=sources.run, daemon=True).start()
+    _time.sleep(0.3)
+    assert sorted(refreshed) == sorted(config.pages)

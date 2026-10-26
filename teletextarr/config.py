@@ -67,6 +67,8 @@ class Config:
     device_id: str
     tuner_count: int
     fps: int
+    linger_seconds: float
+    refresh_when_idle: bool
     timezone: str
     story_seconds: int
     index_seconds: int
@@ -214,6 +216,8 @@ def parse(raw):
         device_id=device_id,
         tuner_count=int(server.get("tuner_count", 4)),
         fps=fps,
+        linger_seconds=float(server.get("linger_seconds", 10)),
+        refresh_when_idle=bool(server.get("refresh_when_idle", False)),
         timezone=str(display.get("timezone", "UTC")),
         story_seconds=int(display.get("story_seconds", 12)),
         index_seconds=int(display.get("index_seconds", 15)),

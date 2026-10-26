@@ -25,12 +25,18 @@ It works in every Plex and Jellyfin app, including TV apps and consoles, because
 
 ## Quick start
 
+Images for amd64 and arm64 are published to `ghcr.io/lgulliver/teletextarr` with every [release](https://github.com/lgulliver/teletextarr/releases).
+
 ```sh
-git clone <this repo> teletextarr && cd teletextarr
+mkdir teletextarr && cd teletextarr
+curl -LO https://raw.githubusercontent.com/lgulliver/teletextarr/main/config.example.yaml
+curl -L -o docker-compose.yml https://raw.githubusercontent.com/lgulliver/teletextarr/main/docker-compose.example.yml
 cp config.example.yaml config.yaml        # set server.base_url and your pages
-docker compose -f docker-compose.example.yml up -d --build
-docker compose -f docker-compose.example.yml run --rm teletextarr python -m teletextarr --check
+docker compose run --rm teletextarr python -m teletextarr --check
+docker compose up -d
 ```
+
+To build from source instead, clone the repo and run `docker compose -f docker-compose.example.yml up -d --build`.
 
 Open `http://<host>:8098/preview/100.png` to see a page without a TV.
 
@@ -110,6 +116,17 @@ feeds / weather / XMLTV / Jellyfin / Plex
 | `/health` | Health check |
 
 Every viewer of a page sees the same subpage at the same time, because the carousel runs off the wall clock.
+
+## Releasing
+
+Bump the version in `pyproject.toml` and `teletextarr/__init__.py`, merge to `main`, then tag it:
+
+```sh
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+The release workflow checks the tag matches the code's version, runs the tests, publishes the image to
+GHCR (`0.2.0`, `0.2` and `latest`) and creates a GitHub Release with notes generated from the merged pull requests.
 
 ## Development
 

@@ -1,0 +1,17 @@
+services:
+  teletextarr:
+    image: teletextarr:latest
+    build: .
+    container_name: teletextarr
+    restart: unless-stopped
+    ports:
+      - "8098:8098"
+    volumes:
+      - ./config.yaml:/config/config.yaml:ro
+      # Optional: lets a media_server page show free space. Read-only.
+      # - /path/to/media:/media:ro
+    environment:
+      TZ: Europe/London
+      # Referenced from config.yaml as ${JELLYFIN_API_KEY} / ${PLEX_TOKEN}. Better kept in an env_file.
+      JELLYFIN_API_KEY: ""
+      PLEX_TOKEN: ""

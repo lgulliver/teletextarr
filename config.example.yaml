@@ -1,0 +1,129 @@
+# Teletextarr config. Copy to config.yaml and edit.
+# Any value written as ${NAME} is read from the environment, so keep API keys and tokens out of this file.
+
+server:
+  # The address Plex and Jellyfin use to reach Teletextarr. Must be reachable from their containers.
+  base_url: http://192.168.1.10:8098
+  port: 8098
+  # 8 hex characters. Plex remembers tuners by this ID, so keep it the same once you have set up Plex.
+  device_id: "54545852"
+  # How many people can watch Teletextarr channels at once.
+  tuner_count: 4
+
+display:
+  # Shown in the header row (room for 11 characters) and used in channel names.
+  brand: TELETEXTARR
+  # How channels are named in Plex/Jellyfin. Placeholders: {brand}, {title}, {number}.
+  # A page can override this with its own channel_name.
+  channel_name: "{brand} {title}"
+  timezone: Europe/London
+  # How long each subpage stays on screen before the carousel moves on.
+  story_seconds: 12
+  index_seconds: 15
+  # The coloured shortcut row along the bottom. Up to four, and they must fit in 40 characters.
+  fastext:
+    - {label: News, page: 101, colour: red}
+    - {label: Sport, page: 300, colour: green}
+    - {label: Weather, page: 400, colour: yellow}
+    - {label: TV, page: 600, colour: cyan}
+
+# Each page becomes a channel; its page number is the channel number.
+# Every page takes: number, title, type, background, text, refresh_minutes, and optionally
+#   banner        the double-height label at the top of the page (default: the title in capitals)
+#   channel_name  this page's channel name, overriding display.channel_name
+# Colours: black, red, green, yellow, blue, magenta, cyan, white.
+# Types:
+#   index         list of every page, plus optional headlines from another page (headlines_from)
+#   rss           stories from one or more RSS/Atom feeds, newest first, one story per subpage
+#   weather       Open-Meteo forecast (free, no API key) for one or more locations
+#   xmltv         now and next from an XMLTV guide, e.g. Tunarr or ErsatzTV
+#   media_server  what's playing and just added on Jellyfin and/or Plex
+#   text          your own static text
+pages:
+  - number: 100
+    title: Index
+    type: index
+    background: blue
+    text: yellow
+    headlines_from: 101
+
+  - number: 101
+    title: News
+    type: rss
+    background: blue
+    max_stories: 8
+    refresh_minutes: 10
+    feeds:
+      - {name: BBC News, url: "https://feeds.bbci.co.uk/news/rss.xml"}
+
+  - number: 300
+    title: Sport
+    type: rss
+    background: green
+    text: black
+    feeds:
+      - {name: BBC Sport, url: "https://feeds.bbci.co.uk/sport/rss.xml"}
+
+  - number: 400
+    title: Weather
+    type: weather
+    background: cyan
+    text: black
+    # One or more places; each gets its own subpage.
+    locations:
+      - {name: London, latitude: 51.51, longitude: -0.13}
+      - {name: Edinburgh, latitude: 55.95, longitude: -3.19}
+    days: 5                                    # 1 to 7
+    units: {temperature: celsius, wind: mph}   # fahrenheit; kmh, ms, kn
+    details: [feels_like, wind, humidity]      # any of these, or [] for just the conditions
+    # Optional Ceefax-style map, shown as the first subpage. Country is an ISO code or name.
+    # places defaults to the locations above; list more to fill out the map.
+    map:
+      country: GB
+      title: UK now
+      neighbours: true                         # draw neighbouring land too
+      places:
+        - {name: London, latitude: 51.51, longitude: -0.13}
+        - {name: Edinburgh, latitude: 55.95, longitude: -3.19}
+        - {name: Cardiff, latitude: 51.48, longitude: -3.18}
+        - {name: Belfast, latitude: 54.60, longitude: -5.93}
+
+  - number: 550
+    title: Technology
+    type: rss
+    background: red
+    feeds:
+      - {name: The Verge, url: "https://www.theverge.com/rss/index.xml"}
+      - {name: Ars Technica, url: "https://feeds.arstechnica.com/arstechnica/index"}
+
+  - number: 600
+    title: TV Guide
+    type: xmltv
+    background: yellow
+    text: blue
+    url: http://192.168.1.10:8000/api/xmltv.xml
+    channels_per_screen: 5
+
+  - number: 700
+    title: Server
+    type: media_server
+    background: red
+    text: yellow
+    show_now_playing: true      # titles only, never who is watching
+    disk_path: /media           # mount your media read-only to show free space; remove to hide
+    jellyfin:
+      url: http://192.168.1.10:8096
+      api_key: ${JELLYFIN_API_KEY}
+    plex:
+      url: http://192.168.1.10:32400
+      token: ${PLEX_TOKEN}
+
+  - number: 888
+    title: About
+    type: text
+    banner: ABOUT THIS SERVICE
+    channel_name: Teletext Help
+    background: magenta
+    lines:
+      - {text: "Welcome to Teletextarr.", colour: yellow}
+      - "Change channel to turn the page."

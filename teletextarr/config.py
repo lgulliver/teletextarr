@@ -66,6 +66,7 @@ class Config:
     port: int
     device_id: str
     tuner_count: int
+    fps: int
     timezone: str
     story_seconds: int
     index_seconds: int
@@ -197,6 +198,10 @@ def parse(raw):
     except (KeyError, IndexError, ValueError) as e:
         raise ConfigError(f"display.channel_name: use {{brand}}, {{title}} and {{number}} only ({e})") from None
 
+    fps = int(server.get("fps", 25))
+    if not 1 <= fps <= 30:
+        raise ConfigError("server.fps must be 1 to 30")
+
     device_id = str(server.get("device_id", "54545852")).upper()
     if not re.fullmatch(r"[0-9A-F]{8}", device_id):
         raise ConfigError("server.device_id must be 8 hex characters")
@@ -208,6 +213,7 @@ def parse(raw):
         port=int(server.get("port", 8098)),
         device_id=device_id,
         tuner_count=int(server.get("tuner_count", 4)),
+        fps=fps,
         timezone=str(display.get("timezone", "UTC")),
         story_seconds=int(display.get("story_seconds", 12)),
         index_seconds=int(display.get("index_seconds", 15)),

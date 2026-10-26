@@ -57,9 +57,17 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
+      # Hand-written notes in .github/release-notes/<tag>.md go first when they exist;
+      # GitHub's generated list of changes is always added underneath.
       - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" --generate-notes --verify-tag \
-            --notes "Docker image: \`ghcr.io/${{ github.repository }}:${GITHUB_REF_NAME#v}\`"
+          notes=$(mktemp)
+          if [ -f ".github/release-notes/$GITHUB_REF_NAME.md" ]; then
+            cat ".github/release-notes/$GITHUB_REF_NAME.md" > "$notes"
+          else
+            echo "Docker image: \`ghcr.io/${{ github.repository }}:${GITHUB_REF_NAME#v}\`" > "$notes"
+          fi
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "Teletextarr $GITHUB_REF_NAME" \
+            --generate-notes --notes-file "$notes"

@@ -10,7 +10,7 @@ from teletextarr import config as cfg
 from teletextarr.maps import MosaicMap, find_country, mosaic_bits, mosaic_char
 from teletextarr.pages import COLS, FASTEXT_ROW, build
 from teletextarr.render import HEIGHT, WIDTH, Carousel, Renderer
-from teletextarr.server import discover, lineup, m3u, xmltv
+from teletextarr.server import discover, ffmpeg_command, lineup, m3u, xmltv
 from teletextarr.sources import clean, parse_feed, parse_xmltv_now_next
 
 EXAMPLE = os.path.join(os.path.dirname(__file__), "..", "config.example.yaml")
@@ -82,6 +82,7 @@ def test_missing_env_var_is_a_clear_error(monkeypatch):
     (lambda r: r["display"]["fastext"][0].update(label="An extremely long fastext label"), "40-character"),
     (lambda r: r["server"].update(device_id="nothex!!"), "hex"),
     (lambda r: r["server"].pop("base_url"), "base_url"),
+    (lambda r: r["server"].update(fps=60), "fps"),
     (lambda r: r["display"].update(channel_name="{brand} {nope}"), "channel_name"),
     (lambda r: page(r, 400).pop("locations"), "location"),
     (lambda r: page(r, 400).update(days=9), "1 to 7"),
@@ -249,3 +250,10 @@ def test_unknown_map_country_is_rejected(monkeypatch):
     page(raw, 400)["map"] = {"country": "Atlantis"}
     with pytest.raises(cfg.ConfigError, match="unknown country"):
         cfg.parse(raw)
+
+
+def test_encoder_converts_before_duplicating_frames(config):
+    cmd = ffmpeg_command(config.fps)
+    assert cmd[cmd.index("-vf") + 1] == "format=yuv420p,fps=25"
+    assert cmd[cmd.index("-g") + 1] == "50"
+    assert ffmpeg_command(10)[cmd.index("-vf") + 1] == "format=yuv420p,fps=10"

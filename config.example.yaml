@@ -9,6 +9,8 @@ server:
   device_id: "54545852"
   # How many people can watch Teletextarr channels at once.
   tuner_count: 4
+  # Output frame rate. 25 suits every client; 10 roughly halves the CPU per viewer if your apps accept it.
+  fps: 25
 
 display:
   # Shown in the header row (room for 11 characters) and used in channel names.

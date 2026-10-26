@@ -11,6 +11,12 @@ server:
   tuner_count: 4
   # Output frame rate. 25 suits every client; 10 roughly halves the CPU per viewer if your apps accept it.
   fps: 25
+  # Keep a page's encoder running this long after its last viewer leaves, so the quick probe Plex and
+  # Jellyfin make before playing reuses the same encoder.
+  linger_seconds: 10
+  # By default pages only fetch fresh data while someone is watching them. Set true to keep every page
+  # up to date all the time (more network calls, but no brief "Waiting..." on first tune).
+  refresh_when_idle: false
 
 display:
   # Shown in the header row (room for 11 characters) and used in channel names.

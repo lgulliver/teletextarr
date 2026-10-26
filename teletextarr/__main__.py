@@ -24,7 +24,7 @@ def main():
         return
     sources = Sources(config)
     sources.start()
-    serve(config, Renderer(), lambda number: build(config, number, sources))
+    serve(config, Renderer(), lambda number: build(config, number, sources), sources)
 
 
 if __name__ == "__main__":
